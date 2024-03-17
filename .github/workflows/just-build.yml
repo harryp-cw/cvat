@@ -1,0 +1,121 @@
+name: CI
+on:
+  push:
+    branches:
+      - 'master'
+      - 'develop'
+  pull_request:
+    types: [ready_for_review, opened, synchronize, reopened]
+    paths-ignore:
+      - 'site/**'
+      - '**/*.md'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CYPRESS_VERIFY_TIMEOUT: 180000 # https://docs.cypress.io/guides/guides/command-line#cypress-verify
+  CVAT_VERSION: "local"
+
+jobs:
+  search_cache:
+    if: |
+      github.event.pull_request.draft == false &&
+      !startsWith(github.event.pull_request.title, '[WIP]') &&
+      !startsWith(github.event.pull_request.title, '[Dependent]')
+    uses: ./.github/workflows/search-cache.yml
+
+  build:
+    needs: search_cache
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify version consistency
+        run: ./dev/update_version.py --verify-current
+
+      - name: Check changelog fragments
+        run: ./dev/check_changelog_fragments.py
+
+      - name: CVAT server. Getting cache from the default branch
+        uses: actions/cache@v3
+        with:
+          path: /tmp/cvat_cache_server
+          key: ${{ runner.os }}-build-server-${{ needs.search_cache.outputs.sha }}
+
+      - name: CVAT UI. Getting cache from the default branch
+        uses: actions/cache@v3
+        with:
+          path: /tmp/cvat_cache_ui
+          key: ${{ runner.os }}-build-ui-${{ needs.search_cache.outputs.sha }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Create artifact directories
+        run: |
+          mkdir /tmp/cvat_server
+          mkdir /tmp/cvat_ui
+          mkdir /tmp/cvat_sdk
+
+      - name: CVAT server. Build and push
+        uses: docker/build-push-action@v3
+        with:
+          build-args: |
+              "COVERAGE_PROCESS_START=.coveragerc"
+          cache-from: type=local,src=/tmp/cvat_cache_server
+          context: .
+          file: Dockerfile
+          tags: cvat/server
+          outputs: type=docker,dest=/tmp/cvat_server/image.tar
+
+      - name: CVAT UI. Build and push
+        uses: docker/build-push-action@v3
+        with:
+          cache-from: type=local,src=/tmp/cvat_cache_ui
+          context: .
+          file: Dockerfile.ui
+          tags: cvat/ui
+          outputs: type=docker,dest=/tmp/cvat_ui/image.tar
+
+      - name: CVAT SDK. Build
+        run: |
+          pip3 install --user -r cvat-sdk/gen/requirements.txt
+          ./cvat-sdk/gen/generate.sh
+
+          cp -r cvat-sdk/* /tmp/cvat_sdk/
+
+      - name: Verify API schema
+        id: verify_schema
+        run: |
+          docker load --input /tmp/cvat_server/image.tar
+          docker run --rm --entrypoint /bin/bash cvat/server \
+            -c 'python manage.py spectacular' > cvat/schema-expected.yml
+
+          if ! git diff --no-index cvat/schema.yml cvat/schema-expected.yml; then
+            echo
+            echo 'API schema has changed! Please update cvat/schema.yml:'
+            echo
+            echo '  docker run --rm --entrypoint /bin/bash cvat/server:dev \'
+            echo "    -c 'python manage.py spectacular' > cvat/schema.yml"
+            exit 1
+          fi
+
+      - name: Upload CVAT server artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: cvat_server
+          path: /tmp/cvat_server/image.tar
+
+      - name: Upload CVAT UI artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: cvat_ui
+          path: /tmp/cvat_ui/image.tar
+
+      - name: Upload CVAT SDK artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: cvat_sdk
+          path: /tmp/cvat_sdk/
