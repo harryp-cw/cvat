@@ -335,7 +335,7 @@ function RemoteBrowser(props: Props): JSX.Element {
         );
     }
 
-    const PAGE_SIZE = 50;
+    const PAGE_SIZE = 100;
     return (
         <div>
             <Breadcrumb>
