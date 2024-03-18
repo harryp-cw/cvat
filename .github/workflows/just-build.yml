@@ -116,6 +116,11 @@ jobs:
           name: cvat_ui
           path: /tmp/cvat_ui/image.tar
 
+      # - id: 'upload-file'
+      #   uses: 'google-github-actions/upload-cloud-storage@v2'
+      #   with:
+      #     path: '/tmp/cvat_ui/image.tar'
+      #     destination: 'bucket-name/file'
       # - name: Upload CVAT SDK artifact
       #   uses: actions/upload-artifact@v3
       #   with:
