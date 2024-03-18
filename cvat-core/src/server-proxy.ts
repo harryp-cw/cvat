@@ -55,7 +55,7 @@ function configureStorage(storage: Storage, useDefaultLocation = false): Partial
 }
 
 function fetchAll(url, filter = {}): Promise<any> {
-    const pageSize = 500;
+    const pageSize = 50;
     const result = {
         count: 0,
         results: [],

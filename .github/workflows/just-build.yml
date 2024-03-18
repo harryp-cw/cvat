@@ -55,7 +55,10 @@ jobs:
 
       - name: Create artifact directories
         run: |
-          set -e
+
+          rm -rf /tmp/cvat_server
+          rm -rf /tmp/cvat_ui
+          rm -rf /tmp/cvat_sdk
 
           mkdir /tmp/cvat_server
           mkdir /tmp/cvat_ui
